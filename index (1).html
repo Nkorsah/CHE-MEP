@@ -1,0 +1,224 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>NOLIMIT CHE MEP</title>
+<style>
+:root{--bg:#f6f5f1;--card:#fff;--text:#1d1d1b;--mute:#6b6a66;--line:#dcdad3;--free:#e7f4ea;--freeb:#9fcfaa;--taken:#f3e3e3;--takenb:#d9a3a3;--mine:#e4ecfb;--mineb:#8fb0ea;--accent:#3b5bdb}
+@media (prefers-color-scheme:dark){:root{color-scheme:dark;--bg:#161615;--card:#212120;--text:#eeede8;--mute:#9a9992;--line:#38382f;--free:#1d3322;--freeb:#3d6b49;--taken:#3a2323;--takenb:#7a4444;--mine:#1f2b45;--mineb:#4a6bb5;--accent:#7b97f5}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--text);font:16px/1.4 system-ui,-apple-system,"Segoe UI",sans-serif}
+main{max-width:900px;margin:0 auto;padding:20px 16px 40px}
+h1{margin:0 0 4px;font-size:1.6rem;letter-spacing:.02em}
+p.sub{margin:0 0 16px;color:var(--mute)}
+.bar{display:flex;gap:12px;flex-wrap:wrap;align-items:center;margin-bottom:12px;font-size:.9rem;color:var(--mute)}
+.pill{padding:3px 10px;border-radius:99px;border:1px solid var(--line);background:var(--card)}
+.admin{color:var(--accent);border-color:var(--accent)}
+section{margin:24px 0}
+section h2{margin:0;font-size:1.2rem}
+section .meta{margin:2px 0 10px;color:var(--mute);font-size:.85rem}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(130px,1fr));gap:10px}
+.slot{border:2px solid var(--freeb);background:var(--free);border-radius:12px;padding:10px;min-height:84px;cursor:pointer;text-align:left;color:var(--text);font:inherit;display:flex;flex-direction:column;gap:4px}
+.slot.taken{border-color:var(--takenb);background:var(--taken)}
+.slot.mine{border-color:var(--mineb);background:var(--mine)}
+.slot .n{font-weight:700;font-size:1.1rem}
+.slot .who{font-size:.9rem;overflow-wrap:anywhere}
+.slot .st{font-size:.75rem;color:var(--mute);text-transform:uppercase;letter-spacing:.04em}
+.slot:disabled{cursor:default;opacity:.75}
+dialog{border:1px solid var(--line);border-radius:14px;background:var(--card);color:var(--text);padding:20px;width:min(360px,90vw)}
+dialog::backdrop{background:rgba(0,0,0,.45)}
+dialog h2{margin:0 0 10px;font-size:1.15rem}
+input[type=text],input[type=email],input[type=password]{width:100%;padding:10px;margin-bottom:8px;border-radius:8px;border:1px solid var(--line);background:var(--bg);color:var(--text);font:inherit}
+label.chk{display:flex;gap:8px;align-items:center;margin-top:6px;font-size:.9rem;color:var(--mute)}
+.row{display:flex;gap:8px;margin-top:14px;justify-content:flex-end;flex-wrap:wrap}
+button.b{padding:8px 14px;border-radius:8px;border:1px solid var(--line);background:var(--card);color:var(--text);font:inherit;cursor:pointer}
+button.b.pri{background:var(--accent);border-color:var(--accent);color:#fff}
+button.b.del{color:#c0392b}
+button.link{background:none;border:0;color:var(--mute);font:inherit;font-size:.85rem;cursor:pointer;text-decoration:underline;padding:0}
+#msg{color:var(--mute);margin:10px 0;font-size:.9rem}
+footer{margin-top:30px;text-align:center}
+</style>
+</head>
+<body>
+<main>
+  <h1>NOLIMIT CHE MEP</h1>
+  <p class="sub">Tap a green slot to claim it. You can only hold one slot, and you can remove yours anytime to pick a different one.</p>
+  <div class="bar"><span class="pill" id="count">Loading…</span><span class="pill admin" id="adm" hidden>Owner mode: tap any slot to place, edit or clear someone</span></div>
+  <div id="msg"></div>
+  <div id="sections"></div>
+  <footer><button class="link" id="adminLink">Owner login</button></footer>
+</main>
+
+<dialog id="dlg">
+  <h2 id="dt"></h2>
+  <input type="text" id="name" maxlength="40" placeholder="Name or username" autocomplete="off">
+  <label class="chk" id="meWrap" hidden><input type="checkbox" id="me"> This is my own slot</label>
+  <div class="row" id="btns"></div>
+</dialog>
+
+<dialog id="login">
+  <h2>Owner login</h2>
+  <input type="email" id="em" placeholder="Email" autocomplete="username">
+  <input type="password" id="pw" placeholder="Password" autocomplete="current-password">
+  <div id="lerr" style="color:#c0392b;font-size:.85rem"></div>
+  <div class="row">
+    <button class="b" id="lcancel">Cancel</button>
+    <button class="b pri" id="lgo">Log in</button>
+  </div>
+</dialog>
+
+<script type="module">
+import { initializeApp } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-app.js";
+import { getAuth, onAuthStateChanged, signInAnonymously, signInWithEmailAndPassword, signOut } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-auth.js";
+import { getFirestore, collection, doc, onSnapshot, writeBatch, setDoc } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js";
+
+// 1) PASTE YOUR FIREBASE CONFIG HERE (Firebase console > Project settings > Your apps > Web app)
+const firebaseConfig = {
+  apiKey: "PASTE_API_KEY",
+  authDomain: "PASTE_PROJECT_ID.firebaseapp.com",
+  projectId: "PASTE_PROJECT_ID",
+  appId: "PASTE_APP_ID"
+};
+
+const N = 39;
+const SECTIONS = [
+  {song:'DIOR LEOPARD', from:1, to:18},
+  {song:'UAV', from:19, to:32},
+  {song:'MATCHES', from:33, to:39}
+];
+
+const app = initializeApp(firebaseConfig);
+const auth = getAuth(app);
+const db = getFirestore(app);
+const $ = id => document.getElementById(id);
+const data = {};
+let me = null, isAdmin = false, ready = false;
+
+function mySlot() {
+  if (!me) return null;
+  for (const k in data) if (data[k].uid === me.uid) return +k;
+  return null;
+}
+
+function say(t) { $('msg').textContent = t || ''; }
+
+function render() {
+  const root = $('sections'); root.innerHTML = '';
+  const mine = mySlot();
+  let taken = 0;
+  SECTIONS.forEach(s => {
+    const sec = document.createElement('section');
+    const h = document.createElement('h2'); h.textContent = s.song;
+    const m = document.createElement('div'); m.className = 'meta'; m.textContent = 'Slots ' + s.from + '–' + s.to;
+    const g = document.createElement('div'); g.className = 'grid';
+    for (let i = s.from; i <= s.to; i++) {
+      const d = data[i], isMine = !!(d && me && d.uid === me.uid);
+      const b = document.createElement('button');
+      b.className = 'slot' + (d ? ' taken' : '') + (isMine ? ' mine' : '');
+      const n = document.createElement('span'); n.className = 'n'; n.textContent = '#' + i;
+      const w = document.createElement('span'); w.className = 'who'; w.textContent = d ? d.name : 'Open';
+      const st = document.createElement('span'); st.className = 'st'; st.textContent = d ? (isMine ? 'Yours' : 'Taken') : 'Available';
+      b.append(n, w, st);
+      if (d) taken++;
+      const canAct = ready && me && (isAdmin || isMine || (!d && mine === null));
+      if (canAct) b.onclick = () => openSlot(i); else b.disabled = true;
+      g.appendChild(b);
+    }
+    sec.append(h, m, g);
+    root.appendChild(sec);
+  });
+  $('count').textContent = taken + ' / ' + N + ' taken';
+  $('adm').hidden = !isAdmin;
+  $('adminLink').textContent = isAdmin ? 'Log out of owner mode' : 'Owner login';
+  if (mine !== null && !isAdmin) say('You have slot #' + mine + '. Remove it first if you want a different one.');
+}
+
+function btn(label, cls, fn) {
+  const b = document.createElement('button'); b.className = 'b ' + (cls || ''); b.textContent = label; b.onclick = fn; $('btns').appendChild(b);
+}
+
+function openSlot(i) {
+  const d = data[i], isMine = !!(d && d.uid === me.uid);
+  $('dt').textContent = d ? (isAdmin && !isMine ? 'Edit slot #' + i : 'Your slot #' + i) : 'Claim slot #' + i;
+  $('name').value = d ? d.name : '';
+  $('meWrap').hidden = !(isAdmin && !d);
+  $('me').checked = false;
+  $('btns').innerHTML = '';
+  btn('Cancel', '', () => $('dlg').close());
+  if (d) btn(isMine && !isAdmin ? 'Remove me' : 'Clear', 'del', () => clearSlot(i));
+  btn(d ? 'Save' : 'Claim', 'pri', () => saveSlot(i));
+  $('dlg').showModal();
+  setTimeout(() => $('name').focus(), 50);
+}
+
+async function saveSlot(i) {
+  const name = $('name').value.trim();
+  if (!name) return;
+  const prev = data[i];
+  try {
+    if (prev) {
+      // rename (keeps the same owner)
+      await setDoc(doc(db, 'slots', String(i)), { name, uid: prev.uid ?? null });
+    } else if (isAdmin && !$('me').checked) {
+      // owner placing someone else
+      await setDoc(doc(db, 'slots', String(i)), { name, uid: null });
+    } else {
+      if (mySlot() !== null) { $('dlg').close(); say('You already hold slot #' + mySlot() + '. Remove it first.'); return; }
+      const batch = writeBatch(db);
+      batch.set(doc(db, 'slots', String(i)), { name, uid: me.uid });
+      batch.set(doc(db, 'holders', me.uid), { slot: String(i) });
+      await batch.commit();
+    }
+    $('dlg').close();
+  } catch (e) { fail(e); }
+}
+
+async function clearSlot(i) {
+  const d = data[i];
+  try {
+    const batch = writeBatch(db);
+    batch.delete(doc(db, 'slots', String(i)));
+    if (d && d.uid) batch.delete(doc(db, 'holders', d.uid));
+    await batch.commit();
+    $('dlg').close();
+  } catch (e) { fail(e); }
+}
+
+function fail(e) {
+  console.error(e);
+  $('dlg').close();
+  say('Couldn’t save that change. Someone may have just taken that slot — try again.');
+}
+
+$('name').addEventListener('keydown', e => { if (e.key === 'Enter') $('btns').lastChild.click(); });
+
+// Owner login
+$('adminLink').onclick = async () => {
+  if (isAdmin) { await signOut(auth); return; } // onAuthStateChanged signs back in anonymously
+  $('lerr').textContent = ''; $('login').showModal();
+};
+$('lcancel').onclick = () => $('login').close();
+$('lgo').onclick = async () => {
+  try {
+    await signInWithEmailAndPassword(auth, $('em').value.trim(), $('pw').value);
+    $('pw').value = ''; $('login').close();
+  } catch (e) { $('lerr').textContent = 'Wrong email or password.'; }
+};
+
+// Auth: everyone gets an anonymous account automatically (remembered by the browser)
+onAuthStateChanged(auth, async u => {
+  if (!u) { try { await signInAnonymously(auth); } catch (e) { say('Couldn’t connect. Check the Firebase setup.'); } return; }
+  me = u; isAdmin = !u.isAnonymous; ready = true; render();
+});
+
+onSnapshot(collection(db, 'slots'), snap => {
+  for (const k in data) delete data[k];
+  snap.forEach(d => { data[d.id] = d.data(); });
+  render();
+}, e => { console.error(e); say('Couldn’t load slots. Check your Firebase config and rules.'); });
+
+render();
+</script>
+</body>
+</html>
