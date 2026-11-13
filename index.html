@@ -38,11 +38,13 @@ button.b.del{color:#c0392b}
 button.link{background:none;border:0;color:var(--mute);font:inherit;font-size:.85rem;cursor:pointer;text-decoration:underline;padding:0}
 #msg{color:var(--mute);margin:10px 0;font-size:.9rem}
 footer{margin-top:30px;text-align:center}
+video{display:block;width:100%;max-height:70vh;border-radius:12px;background:#000;margin:8px 0 16px}
 </style>
 </head>
 <body>
 <main>
   <h1>NOLIMIT CHE MEP</h1>
+  <video controls playsinline preload="metadata" src="Che_Mep_Parts.mp4"></video>
   <p class="sub">Tap a green slot to claim it. You can only hold one slot, and you can remove yours anytime to pick a different one.</p>
   <div class="bar"><span class="pill" id="count">Loading…</span><span class="pill admin" id="adm" hidden>Owner mode: tap any slot to place, edit or clear someone</span></div>
   <div id="msg"></div>
@@ -75,21 +77,13 @@ import { getFirestore, collection, doc, onSnapshot, writeBatch, setDoc } from "h
 
 // 1) PASTE YOUR FIREBASE CONFIG HERE (Firebase console > Project settings > Your apps > Web app)
 const firebaseConfig = {
-
   apiKey: "AIzaSyDXnEQN6uxqQwQjHdu5lCtbcYZeZ8Yuw1E",
-
   authDomain: "che-mep-firebase.firebaseapp.com",
-
   projectId: "che-mep-firebase",
-
   storageBucket: "che-mep-firebase.firebasestorage.app",
-
   messagingSenderId: "876526821768",
-
   appId: "1:876526821768:web:a86534726cf914ea85da3d",
-
   measurementId: "G-0REHXBYMPC"
-
 };
 
 const N = 39;
