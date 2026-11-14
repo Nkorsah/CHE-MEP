@@ -43,13 +43,16 @@ footer{margin-top:30px;text-align:center}
 button.sm{padding:4px 10px;font-size:.8rem;border-radius:8px;border:1px solid var(--line);background:var(--card);color:var(--text);cursor:pointer;font-family:inherit}
 button.sm.del{color:#c0392b}
 #addSong{margin:6px 0 0}
+iframe.yt{display:block;width:100%;aspect-ratio:16/9;border:0;border-radius:12px;background:#000}
+#vtools{margin:0 0 16px}
 video{display:block;width:100%;max-height:70vh;border-radius:12px;background:#000;margin:8px 0 16px}
 </style>
 </head>
 <body>
 <main>
   <h1>NOLIMIT CHE MEP</h1>
-  <video controls playsinline preload="metadata" src="Che%20Mep%20Parts.mp4"></video>
+  <div id="vwrap"></div>
+  <div id="vtools" hidden><button class="sm" id="vbtn">Change video</button></div>
   <p class="sub">Tap a green slot to claim it. You can only hold one slot, and you can remove yours anytime to pick a different one.</p>
   <div class="bar"><span class="pill" id="count">Loading…</span><span class="pill admin" id="adm" hidden>Owner mode: tap any slot to place, edit or clear someone</span></div>
   <div id="msg"></div>
@@ -76,6 +79,17 @@ video{display:block;width:100%;max-height:70vh;border-radius:12px;background:#00
   </div>
 </dialog>
 
+<dialog id="vdlg">
+  <h2>Change video</h2>
+  <input type="file" id="vfile" accept="video/*" style="margin-bottom:8px;width:100%">
+  <input type="text" id="vurl" placeholder="…or paste a video / YouTube link" autocomplete="off">
+  <div id="vstat" style="font-size:.85rem;color:var(--mute)"></div>
+  <div class="row">
+    <button class="b" id="vcancel">Cancel</button>
+    <button class="b pri" id="vok">Save video</button>
+  </div>
+</dialog>
+
 <dialog id="login">
   <h2>Owner login</h2>
   <input type="email" id="em" placeholder="Email" autocomplete="username">
@@ -91,6 +105,8 @@ video{display:block;width:100%;max-height:70vh;border-radius:12px;background:#00
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-app.js";
 import { getAuth, onAuthStateChanged, signInAnonymously, signInWithEmailAndPassword, signOut } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-auth.js";
 import { getFirestore, collection, doc, onSnapshot, writeBatch, setDoc } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js";
+
+import { getStorage, ref, uploadBytesResumable, getDownloadURL } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-storage.js";
 
 // 1) PASTE YOUR FIREBASE CONFIG HERE (Firebase console > Project settings > Your apps > Web app)
 const firebaseConfig = {
@@ -116,6 +132,7 @@ let songs = DEFAULT_SONGS, cfgReady = false;
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
 const db = getFirestore(app);
+const storage = getStorage(app);
 const $ = id => document.getElementById(id);
 const data = {};
 let me = null, isAdmin = false, ready = false;
@@ -169,6 +186,7 @@ function render() {
   $('count').textContent = taken + ' / ' + total + ' taken';
   $('adm').hidden = !isAdmin;
   $('addSong').hidden = !isAdmin;
+  $('vtools').hidden = !isAdmin;
   $('adminLink').textContent = isAdmin ? 'Log out of owner mode' : 'Owner login';
   if (mine !== null && !isAdmin) say('You have slot #' + mine + '. Remove it first if you want a different one.');
 }
@@ -246,6 +264,60 @@ async function removeSong(idx) {
     await batch.commit();
   } catch (e) { console.error(e); say('Couldn’t delete that song.'); }
 }
+
+// ---- Video: default file in the repo, or whatever the owner set ----
+const DEFAULT_VIDEO = 'Che%20Mep%20Parts.mp4';
+let curVideo = null;
+function showVideo(url) {
+  if (url === curVideo) return;
+  curVideo = url;
+  const w = $('vwrap'); w.innerHTML = '';
+  const yt = url.match(/(?:youtu\.be\/|youtube\.com\/(?:watch\?v=|embed\/|shorts\/))([\w-]{11})/);
+  let el;
+  if (yt) {
+    el = document.createElement('iframe'); el.className = 'yt';
+    el.src = 'https://www.youtube.com/embed/' + yt[1];
+    el.allowFullscreen = true;
+    el.allow = 'accelerometer; encrypted-media; picture-in-picture; fullscreen';
+  } else {
+    el = document.createElement('video');
+    el.controls = true; el.playsInline = true; el.preload = 'metadata'; el.src = url;
+  }
+  w.appendChild(el);
+}
+showVideo(DEFAULT_VIDEO);
+
+$('vbtn').onclick = () => { $('vfile').value = ''; $('vurl').value = ''; $('vstat').textContent = ''; $('vdlg').showModal(); };
+$('vcancel').onclick = () => $('vdlg').close();
+$('vok').onclick = async () => {
+  const f = $('vfile').files[0], link = $('vurl').value.trim();
+  const stat = $('vstat');
+  try {
+    let url = link;
+    if (f) {
+      if (!f.type.startsWith('video/')) { stat.textContent = 'Please choose a video file.'; return; }
+      $('vok').disabled = true;
+      const r = ref(storage, 'video/' + Date.now() + '-' + f.name.replace(/[^\w.\-]/g, '_'));
+      const task = uploadBytesResumable(r, f, {contentType: f.type});
+      await new Promise((res, rej) => {
+        task.on('state_changed',
+          sn => { stat.textContent = 'Uploading… ' + Math.round(100 * sn.bytesTransferred / sn.totalBytes) + '%'; },
+          rej, res);
+      });
+      url = await getDownloadURL(r);
+    }
+    if (!url) { stat.textContent = 'Choose a file or paste a link.'; return; }
+    await setDoc(doc(db, 'config', 'video'), {url});
+    $('vdlg').close();
+  } catch (e) {
+    console.error(e);
+    stat.textContent = 'Couldn’t save the video. Check that Firebase Storage is set up and its rules are published.';
+  } finally { $('vok').disabled = false; }
+};
+
+onSnapshot(doc(db, 'config', 'video'), snap => {
+  showVideo(snap.exists() && snap.data().url ? snap.data().url : DEFAULT_VIDEO);
+}, e => console.error(e));
 
 function btn(label, cls, fn) {
   const b = document.createElement('button'); b.className = 'b ' + (cls || ''); b.textContent = label; b.onclick = fn; $('btns').appendChild(b);
