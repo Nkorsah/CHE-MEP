@@ -29,7 +29,7 @@ section .meta{margin:2px 0 10px;color:var(--mute);font-size:.85rem}
 dialog{border:1px solid var(--line);border-radius:14px;background:var(--card);color:var(--text);padding:20px;width:min(360px,90vw)}
 dialog::backdrop{background:rgba(0,0,0,.45)}
 dialog h2{margin:0 0 10px;font-size:1.15rem}
-input[type=text],input[type=email],input[type=password],input[type=number]{width:100%;padding:10px;margin-bottom:8px;border-radius:8px;border:1px solid var(--line);background:var(--bg);color:var(--text);font:inherit}
+input[type=text],input[type=email],input[type=password],input[type=number],input[type=datetime-local]{width:100%;padding:10px;margin-bottom:8px;border-radius:8px;border:1px solid var(--line);background:var(--bg);color:var(--text);font:inherit}
 label.chk{display:flex;gap:8px;align-items:center;margin-top:6px;font-size:.9rem;color:var(--mute)}
 .row{display:flex;gap:8px;margin-top:14px;justify-content:flex-end;flex-wrap:wrap}
 button.b{padding:8px 14px;border-radius:8px;border:1px solid var(--line);background:var(--card);color:var(--text);font:inherit;cursor:pointer}
@@ -55,15 +55,20 @@ video{display:block;width:100%;max-height:70vh;border-radius:12px;background:#00
 .slot.done{border-color:var(--doneb);background:var(--done)}
 .legend{display:flex;gap:14px;flex-wrap:wrap;font-size:.8rem;color:var(--mute);margin:0 0 8px}
 .legend i{display:inline-block;width:12px;height:12px;border-radius:4px;border:2px solid;vertical-align:-2px;margin-right:5px}
+.cd{text-align:center;padding:12px;border:1px solid var(--line);border-radius:12px;background:var(--card);margin:8px 0 12px}
+#cdlabel{font-size:.8rem;color:var(--mute);text-transform:uppercase;letter-spacing:.06em}
+#cdtime{font-size:1.7rem;font-weight:700;font-variant-numeric:tabular-nums}
+#cdwhen{font-size:.8rem;color:var(--mute)}
 </style>
 </head>
 <body>
 <main>
   <h1>NOLIMIT CHE MEP</h1>
+  <div class="cd" id="cd" hidden><div id="cdlabel"></div><div id="cdtime"></div><div id="cdwhen"></div></div>
   <div id="vwrap"></div>
   <div id="vmsg"></div>
-  <p class="sub">Tap an open slot to claim it. You can only hold one slot, and you can remove yours anytime to pick a different one.</p>
-  <div class="bar"><span class="pill" id="count">Loading…</span><span class="pill admin" id="adm" hidden>Owner mode: tap any slot to place, edit or clear someone</span><button class="sm" id="vbtn" hidden>Change video</button></div>
+  <p class="sub">Tap a green slot to claim it. You can only hold one slot, and you can remove yours anytime to pick a different one.</p>
+  <div class="bar"><span class="pill" id="count">Loading…</span><span class="pill admin" id="adm" hidden>Owner mode: tap any slot to place, edit or clear someone</span><button class="sm" id="vbtn" hidden>Change video</button><button class="sm" id="dbtn" hidden>Set deadline</button></div>
   <div class="legend"><span><i style="background:var(--open);border-color:var(--openb)"></i>Open</span><span><i style="background:var(--fill);border-color:var(--fillb)"></i>Filled</span><span><i style="background:var(--done);border-color:var(--doneb)"></i>Finished</span></div>
   <div id="msg"></div>
   <div id="sections"></div>
@@ -97,6 +102,18 @@ video{display:block;width:100%;max-height:70vh;border-radius:12px;background:#00
   <div class="row">
     <button class="b" id="vcancel">Cancel</button>
     <button class="b pri" id="vok">Save video</button>
+  </div>
+</dialog>
+
+<dialog id="ddlg">
+  <h2>Set deadline</h2>
+  <input type="text" id="dlabel" maxlength="40" placeholder="Label (e.g. Parts due)" autocomplete="off">
+  <input type="datetime-local" id="dtime">
+  <div id="derr" style="color:#c0392b;font-size:.85rem"></div>
+  <div class="row">
+    <button class="b" id="dcancel">Cancel</button>
+    <button class="b del" id="dremove">Remove</button>
+    <button class="b pri" id="dok">Save</button>
   </div>
 </dialog>
 
@@ -159,6 +176,7 @@ function ownerUI() {
   $('adm').hidden = !isAdmin;
   $('addSong').hidden = !isAdmin;
   $('vbtn').hidden = !isAdmin;
+  $('dbtn').hidden = !isAdmin;
   $('adminLink').textContent = isAdmin ? 'Log out of owner mode' : 'Owner login';
 }
 
@@ -339,6 +357,47 @@ $('vok').onclick = async () => {
 onSnapshot(doc(db, 'config', 'video'), snap => {
   if (snap.exists() && snap.data().url) showVideo(snap.data().url); else showDefaultVideo();
 }, e => console.error(e));
+
+// ---- Countdown: the owner sets a deadline, everyone sees it live ----
+let deadline = null;
+const pad2 = n => String(n).padStart(2, '0');
+function tick() {
+  const box = $('cd');
+  if (!deadline) { box.hidden = true; return; }
+  box.hidden = false;
+  $('cdlabel').textContent = deadline.label || 'Deadline';
+  $('cdwhen').textContent = new Date(deadline.ts).toLocaleString([], {dateStyle: 'full', timeStyle: 'short'});
+  const ms = deadline.ts - Date.now();
+  if (ms <= 0) { $('cdtime').textContent = 'Time’s up!'; return; }
+  const d = Math.floor(ms / 864e5), h = Math.floor(ms / 36e5) % 24, m = Math.floor(ms / 6e4) % 60, sec = Math.floor(ms / 1e3) % 60;
+  $('cdtime').textContent = d + 'd ' + pad2(h) + 'h ' + pad2(m) + 'm ' + pad2(sec) + 's';
+}
+setInterval(tick, 1000);
+onSnapshot(doc(db, 'config', 'deadline'), snap => {
+  deadline = snap.exists() && snap.data().ts ? snap.data() : null;
+  tick();
+}, e => console.error(e));
+
+const toLocalInput = t => { const d = new Date(t); return d.getFullYear() + '-' + pad2(d.getMonth() + 1) + '-' + pad2(d.getDate()) + 'T' + pad2(d.getHours()) + ':' + pad2(d.getMinutes()); };
+$('dbtn').onclick = () => {
+  $('dlabel').value = deadline ? (deadline.label || '') : '';
+  $('dtime').value = deadline ? toLocalInput(deadline.ts) : '';
+  $('derr').textContent = '';
+  $('ddlg').showModal();
+};
+$('dcancel').onclick = () => $('ddlg').close();
+$('dremove').onclick = async () => {
+  try { await setDoc(doc(db, 'config', 'deadline'), {ts: null, label: ''}); $('ddlg').close(); }
+  catch (e) { console.error(e); $('derr').textContent = 'Couldn’t remove it. Check your Firebase rules.'; }
+};
+$('dok').onclick = async () => {
+  const v = $('dtime').value;
+  if (!v) { $('derr').textContent = 'Pick a date and time.'; return; }
+  try {
+    await setDoc(doc(db, 'config', 'deadline'), {ts: new Date(v).getTime(), label: $('dlabel').value.trim()});
+    $('ddlg').close();
+  } catch (e) { console.error(e); $('derr').textContent = 'Couldn’t save. Check your Firebase rules.'; }
+};
 
 function btn(label, cls, fn) {
   const b = document.createElement('button'); b.className = 'b ' + (cls || ''); b.textContent = label; b.onclick = fn; $('btns').appendChild(b);
