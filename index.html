@@ -46,6 +46,15 @@ button.sm.del{color:#c0392b}
 iframe.yt{display:block;width:100%;aspect-ratio:16/9;border:0;border-radius:12px;background:#000}
 #vmsg{color:#c0392b;font-size:.85rem;margin:-8px 0 12px}
 video{display:block;width:100%;max-height:70vh;border-radius:12px;background:#000;margin:8px 0 16px}
+/* status colors: open (grey) / filled (yellow) / finished (green) */
+:root{--open:#fff;--openb:#cfcdc5;--fill:#fdf1c0;--fillb:#e0bf3f;--done:#e1f3e5;--doneb:#7fc08e}
+@media (prefers-color-scheme:dark){:root{--open:#212120;--openb:#4a4a42;--fill:#3b3414;--fillb:#9a7f1f;--done:#1d3322;--doneb:#3d6b49}}
+.slot{border-color:var(--openb);background:var(--open)}
+.slot.taken{border-color:var(--fillb);background:var(--fill)}
+.slot.mine{border-color:var(--fillb);background:var(--fill);box-shadow:0 0 0 3px var(--mineb)}
+.slot.done{border-color:var(--doneb);background:var(--done)}
+.legend{display:flex;gap:14px;flex-wrap:wrap;font-size:.8rem;color:var(--mute);margin:0 0 8px}
+.legend i{display:inline-block;width:12px;height:12px;border-radius:4px;border:2px solid;vertical-align:-2px;margin-right:5px}
 </style>
 </head>
 <body>
@@ -55,6 +64,7 @@ video{display:block;width:100%;max-height:70vh;border-radius:12px;background:#00
   <div id="vmsg"></div>
   <p class="sub">Tap a green slot to claim it. You can only hold one slot, and you can remove yours anytime to pick a different one.</p>
   <div class="bar"><span class="pill" id="count">Loading…</span><span class="pill admin" id="adm" hidden>Owner mode: tap any slot to place, edit or clear someone</span><button class="sm" id="vbtn" hidden>Change video</button></div>
+  <div class="legend"><span><i style="background:var(--open);border-color:var(--openb)"></i>Open</span><span><i style="background:var(--fill);border-color:var(--fillb)"></i>Filled</span><span><i style="background:var(--done);border-color:var(--doneb)"></i>Finished</span></div>
   <div id="msg"></div>
   <div id="sections"></div>
   <button class="b pri" id="addSong" hidden>+ Add new song</button>
@@ -104,7 +114,7 @@ video{display:block;width:100%;max-height:70vh;border-radius:12px;background:#00
 <script type="module">
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-app.js";
 import { getAuth, onAuthStateChanged, signInAnonymously, signInWithEmailAndPassword, signOut } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-auth.js";
-import { getFirestore, collection, doc, onSnapshot, writeBatch, setDoc } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js";
+import { getFirestore, collection, doc, onSnapshot, writeBatch, setDoc, updateDoc } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js";
 
 import { getStorage, ref, uploadBytesResumable, getDownloadURL } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-storage.js";
 
@@ -157,7 +167,7 @@ function render() {
   const root = $('sections'); root.innerHTML = '';
   if (!cfgReady) { $('count').textContent = 'Loading…'; return; }
   const mine = mySlot();
-  let taken = 0, total = 0;
+  let taken = 0, total = 0, finished = 0;
   songs.forEach((song, idx) => {
     const sec = document.createElement('section');
     const head = document.createElement('div'); head.className = 'shead';
@@ -178,12 +188,13 @@ function render() {
       total++;
       const d = data[i], isMine = !!(d && me && d.uid === me.uid);
       const b = document.createElement('button');
-      b.className = 'slot' + (d ? ' taken' : '') + (isMine ? ' mine' : '');
+      b.className = 'slot' + (d ? ' taken' : '') + (d && d.done ? ' done' : '') + (isMine ? ' mine' : '');
       const n = document.createElement('span'); n.className = 'n'; n.textContent = '#' + i;
       const w = document.createElement('span'); w.className = 'who'; w.textContent = d ? d.name : 'Open';
-      const st = document.createElement('span'); st.className = 'st'; st.textContent = d ? (isMine ? 'Yours' : 'Taken') : 'Available';
+      const st = document.createElement('span'); st.className = 'st'; st.textContent = d ? (d.done ? 'Finished' : (isMine ? 'Yours' : 'Filled')) : 'Available';
       b.append(n, w, st);
       if (d) taken++;
+      if (d && d.done) finished++;
       const canAct = ready && me && (isAdmin || isMine || (!d && mine === null));
       if (canAct) b.onclick = () => openSlot(i); else b.disabled = true;
       g.appendChild(b);
@@ -191,7 +202,7 @@ function render() {
     sec.append(head, m, g);
     root.appendChild(sec);
   });
-  $('count').textContent = taken + ' / ' + total + ' taken';
+  $('count').textContent = taken + ' / ' + total + ' filled · ' + finished + ' finished';
   if (mine !== null && !isAdmin) say('You have slot #' + mine + '. Remove it first if you want a different one.');
 }
 
@@ -341,7 +352,8 @@ function openSlot(i) {
   $('me').checked = false;
   $('btns').innerHTML = '';
   btn('Cancel', '', () => $('dlg').close());
-  if (d) btn(isMine && !isAdmin ? 'Remove me' : 'Clear', 'del', () => clearSlot(i));
+  if (d && isAdmin) btn(d.done ? 'Mark unfinished' : 'Mark finished', '', () => setDone(i, !d.done));
+  if (d && (isAdmin || !d.done)) btn(isMine && !isAdmin ? 'Remove me' : 'Clear', 'del', () => clearSlot(i));
   btn(d ? 'Save' : 'Claim', 'pri', () => saveSlot(i));
   $('dlg').showModal();
   setTimeout(() => $('name').focus(), 50);
@@ -354,7 +366,7 @@ async function saveSlot(i) {
   try {
     if (prev) {
       // rename (keeps the same owner)
-      await setDoc(doc(db, 'slots', String(i)), { name, uid: prev.uid ?? null });
+      await updateDoc(doc(db, 'slots', String(i)), { name });
     } else if (isAdmin && !$('me').checked) {
       // owner placing someone else
       await setDoc(doc(db, 'slots', String(i)), { name, uid: null });
@@ -367,6 +379,13 @@ async function saveSlot(i) {
     }
     $('dlg').close();
   } catch (e) { fail(e); }
+}
+
+async function setDone(i, val) {
+  try {
+    await updateDoc(doc(db, 'slots', String(i)), { done: val });
+    $('dlg').close();
+  } catch (e) { console.error(e); $('dlg').close(); say('Couldn’t update that part. Check your Firebase rules.'); }
 }
 
 async function clearSlot(i) {
